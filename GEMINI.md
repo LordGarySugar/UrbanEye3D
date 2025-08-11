@@ -1,42 +1,76 @@
 # Urban Eye 3D – JOSM 3D Viewer Plugin
 
-## Goal
+## Goals
 
-Create a JOSM plugin that displays loaded buildings (including `building:part=*`) in a separate 3D window.
+* Create a JOSM plugin that displays loaded buildings (including `building:part=*`) in a separate 3D window, making creation and editing of 3d building in OSM easier.
+* Make it possible to generate more realistic 3D buildings based on OSM data, including windows, cornices, doors, entrances and  building passages.
 
 ## Next Steps
 
 ### Musts for the Next Release 
 
-*Currently none*
+*  TG, none.
 
-### Ideas for the Further Development 
+### Ideas for the Further Development
 
-* **Continue with roof:shape support.**
-    * support linear profle roofs for arbitrary quasi-quadrangular bases. seems to be very tricky.
-        * See  Plan for roof:shape implementation section   
-    * implement zakomar roof somehow. maybe boolean operation should be tried.    
-* **More efficient check** for building/building part belongings based on r-tree  
-* **Real Ambient Occlusion.** See "Plan for Screen-Space Ambient Occlusion (SSAO) Implementation" section below
-* **Support of materials** (tags building:material  and roof:material). Note: material does not affect color, it affects procedurial texture and metalness. 
+MoSCoW: 
+
+#### Must 
+* Support linear profile roofs for **arbitrary quasi-quadrangular bases**.
+    * This is necessary because our best 3d models use this feature extensivly (https://3dcheck.zkir.ru/RUS_TOP/W419266377#model). Without it plugin is incomplete. 
+	* See  Plan for roof:shape implementation section 
+	* Some development has been done in [LinearProfile2 branch](https://github.com/Zkir/UrbanEye3D/tree/LinearProfile2) 	 
+
+#### Should
+* Support [windows](https://wiki.openstreetmap.org/wiki/Key:window).
+    * Since this feature is present in osm2world, we also want that.
+* Implement rendering of building passages (`tunnel=building_passage`). 
+    * Definetely, this requires support of boolean operations with meshes: "difference"
+
+
+#### Could 
+* Implement **partial scene update**. If a primitive is changed, geometry of only related objects should be updated, not of the whole scene. 
+    * Performance is not a big issue right now, but it may become important if more complex geometry (e.g. polygonal windows) is generated.
+* **More efficient check** for building/building part belongings based on r-tree.
+    * Same as above  	
+* **Real Ambient Occlusion.** 
+	* Current rendering engine is good enough for the editing plugin. 
+    * See [Plan for Screen-Space Ambient Occlusion (SSAO) Implementation](#plan-for-screen-space-ambient-occlusion-ssao-implementation) section below
+* **Support of materials** (tags building:material  and roof:material). 
+	* Note: material does not affect color, it affects procedural texture and metalness. 
     * Some more advanced shading is obviously required. 
-* **New Icons** We need to ask an artist to draw more interesting icons. Requirements: svg format, size 48x48px
-* osm2world supports [windows](https://wiki.openstreetmap.org/wiki/Key:window). we also want that.
+* Implement `zakomar` roof somehow. 
+    * It was implemented in Blosm, but that implementation is not suitable for us (not watertight). Probably boolean operation should be tried.    
+	
+#### Would [Not]
+* **New Icons**
+	* Current icon is simple, but it does the job
+	* We need to ask an artist to draw more interesting icons. Requirements: svg format, size 48x48px
+* render other objects, not only buildings. 
+    * Seems to be a topic for osm2world integration. 
 
 
 ## Recent Accomplishments 
 
-### August 3, 2025
-* Refactoring: `Contour` class is now located in the `utils` package
+### August 9, 2025
+* primitiveId  added to RenderableBuildingElement
 
-### July 31, 2025
-* Autotest for Scene.updateData() -- proved to be very usefull
-* Tags related to color and material (`building:colour`, `building:material`, `roof:colour`, `roof:material`) are inherited from building to parts. This improves colors significantly.
-* Check whether building part belongs to a building imporved. Actual contour is tested, not only bbox.
+#### Performance tests:
+Scene #1, Сity center ( ~4200 parts):
+* GEOMETRY UPDATE TIME: 306 ms 
+* Render Time (Average 100 frames avg): 95 ms
 
-### July 30, 2025
-* [enh] Support of **roof:shape=cross_gabled:** New mesher implemented.
-* [bugfix] Handling of defaults for height improved.
+Scene #2, Christ the Saviour (921 parts)
+* Render Time (100 frame average): 18 ms
+* GEOMETRY UPDATE TIME: 78 ms 
+
+Сonclusion: partial scene update is worth efforts
+
+### August 8, 2025
+* Version uplifted to 1.2.0
+* Small refactorings
+* [pythonic script](collect_tags.py) to collect actually used tags has been created. taginfo.json has been submited to taginfo projects.
+* Support of skillion roof for multipolygons.
 
 ### Earlier
 See [Devblog page](DEVBLOG.md)
@@ -261,6 +295,103 @@ This pass combines the original scene color with the ambient occlusion map.
         *   Outputs the final color to the screen.
 3.  **Render:** Render a full-screen quad to display the final, beautifully shaded image.
 
+
+## Plan for Performance-Сheck
+
+### Goal
+
+Determine whether it makes sense to invest in partial scene updates. For this, we need to measure and compare the time spent on two key operations:
+
+1.  **Geometry Update:** Calculation and creation of 3D meshes for buildings (`Scene.updateData()`)
+2.  **Rendering:** Displaying the already created geometry on the screen (`Renderer3D.display()`)
+
+### Tools
+
+We will use standard Java tools for time measurement — `System.nanoTime()` — and output the results to the console using `System.out.println()`.
+
+---
+
+#### Step 1: Measuring Geometry Update Time
+
+This measures how long it takes to fully recalculate the entire scene after making changes to the OSM data.
+
+1.  **Location:** `DialogWindow3D.java` file.
+2.  **Logic:** We will find the `updateData()` method and wrap the `scene3d.updateData()` call in a timer.
+
+    ```java
+    // In DialogWindow3D.java, inside the updateData() method
+
+    private void updateData() {
+        long startTime = System.nanoTime(); // <--- START
+
+        if (listenedLayer != null) {
+            scene3d.updateData(listenedLayer.getDataSet());
+        } else {
+            scene3d.updateData(null);
+        }
+
+        long endTime = System.nanoTime(); // <--- END
+        long durationMs = (endTime - startTime) / 1_000_000;
+        System.out.println("--- GEOMETRY UPDATE TIME: " + durationMs + " ms ---");
+
+        renderer3D.repaint();
+    }
+    ```
+3.  **What we will see:** After each change in JOSM (moving a node, changing a tag), a single line will appear in the console showing how many milliseconds it took to fully recalculate the geometry.
+
+---
+
+#### Step 2: Measuring the Rendering Time of a Single Frame
+
+This measures how long it takes to render an already prepared scene. This code is executed for each frame (i.e., many times per second).
+
+1.  **Location:** `Renderer3D.java` file.
+2.  **Logic:** We will add a timer at the beginning and end of the `display()` method. To avoid cluttering the console, we will output the average time, for example, every 100 frames.
+
+    ```java
+    // In the Renderer3D.java file
+
+    private long frameCount = 0;
+    private long totalFrameTime = 0;
+
+    @Override
+    public void display(GLAutoDrawable drawable) {
+        long startTime = System.nanoTime(); // <--- START
+
+        // ... (all existing rendering code: gl.glClear, loop through buildings, etc.)
+
+        long endTime = System.nanoTime(); // <--- END
+        totalFrameTime += (endTime - startTime);
+        frameCount++;
+
+        if (frameCount == 100) {
+            long averageTimeNs = totalFrameTime / 100;
+            long averageTimeMs = averageTimeNs / 1_000_000;
+            System.out.println("Average Render Time (100 frames): " + averageTimeMs + " ms");
+            frameCount = 0;
+            totalFrameTime = 0;
+        }
+    }
+    ```
+3.  **What we will see:** Messages about the average rendering time will periodically appear in the console. This will show how "heavy" the scene is for the graphics card.
+
+---
+
+#### Step 3: Analysis of the Results
+
+1.  **Launch JOSM** with the plugin and open a test file with a large number of buildings.
+2.  **Look at the console output:** You will see a constant stream of messages about the rendering time.
+3.  **Make a change:** Move a building node or change a tag.
+4.  **Compare the numbers:**
+    *   A single large number will appear in the console — the **geometry update time**.
+    *   Compare it with the average **rendering time**.
+
+**Conclusion:**
+
+*   **If the geometry update time (e.g., 500 ms) is significantly longer than the rendering time (e.g., 10 ms)**, this is a clear sign that the bottleneck is in the geometry calculation. In this case, **implementing partial scene updates will provide a huge performance boost**, as we will avoid the costly operation.
+*   **If the update time is comparable to or less than the rendering time**, the problem is more likely in the complexity of the scene itself, and partial updates will have less effect.
+
+This plan will allow us to obtain clear, measurable data to make a decision.
 
 ## Learnings
 

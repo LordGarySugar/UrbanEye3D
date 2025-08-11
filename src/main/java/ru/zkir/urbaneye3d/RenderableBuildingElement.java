@@ -12,8 +12,11 @@ import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.openstreetmap.josm.data.osm.PrimitiveId;
+
 public class RenderableBuildingElement {
 
+    public final PrimitiveId primitiveId;
     public final double roofHeight;
     public final double minHeight;  // z0 -- z-coordinate of building bottom
     public final double wallHeight; // z1 -- z coordinate of walls top
@@ -28,7 +31,8 @@ public class RenderableBuildingElement {
     public final LatLon origin;
     private Mesh mesh;
 
-    public RenderableBuildingElement(LatLon origin, Contour contour, double height, double minHeight, double roofHeight, String wallColor, String roofColor, String roofShape, String roofDirectionStr, String roofOrientation) {
+    public RenderableBuildingElement(PrimitiveId primitiveId, LatLon origin, Contour contour, double height, double minHeight, double roofHeight, String wallColor, String roofColor, String roofShape, String roofDirectionStr, String roofOrientation) {
+        this.primitiveId = primitiveId;
         if (contour==null){
             throw new RuntimeException("contour must be specified");
         }
@@ -60,9 +64,10 @@ public class RenderableBuildingElement {
             roofHeight=height-minHeight;
         }
 
-        if (this.hasComplexContour() || roofHeight == 0){
-            //in case outline has inner rings, we cannot construct any other roof, but FLAT
-            // also, if roof's height is zero, it's flat!
+
+        //in case outline has inner rings, we cannot construct any other roof, but FLAT and SKILLION
+        // also, if roof's height is zero, it's flat!
+        if( (roofHeight == 0) || (this.hasComplexContour() && !roofShape.equals(RoofShapes.SKILLION.toString()))){
             this.roofShape = RoofShapes.FLAT;
         }else{
             this.roofShape = RoofShapes.fromString(roofShape);
@@ -105,16 +110,11 @@ public class RenderableBuildingElement {
         return this.mesh;
 
     }
+	
     public void composeMesh(){
         this.mesh = null;
-        double wallHeight = height - roofHeight;
 
-        // Always generate flat roof if roofShape is FLAT or if it's a complex contour
-        if ( !hasComplexContour()) {
-            // Existing logic for other roof shapes (only for simple contours)
-            List<Point2D> basePoints = getContour(); // This will return the first outer ring
-            this.mesh = roofShape.getMesher().generate(this);
-        }
+        this.mesh = roofShape.getMesher().generate(this);
 
         //last chance! mesh can be null, in case specific roof shapes was not created due to limitations
         // for example, GABLED and HIPPED can be created for quadrangles only.
@@ -125,7 +125,7 @@ public class RenderableBuildingElement {
     }
 
 
-    private double parseDirection(String direction) {
+    public Double parseDirection(String direction) {
         if (direction == null || direction.isEmpty()) {
             return Double.NaN; // Return NaN if direction is not specified
         }
@@ -134,23 +134,23 @@ public class RenderableBuildingElement {
         } catch (NumberFormatException e) {
             // Handle cardinal directions (N, S, E, W, etc.)
             switch (direction.toUpperCase()) {
-                case "N": return 0;
-                case "NNE": return 22.5;
-                case "NE": return 45;
-                case "ENE": return 67.5;
-                case "E": return 90;
+                case "N":   return   0.0;
+                case "NNE": return  22.5;
+                case "NE":  return  45.0;
+                case "ENE": return  67.5;
+                case "E":   return  90.0;
                 case "ESE": return 112.5;
-                case "SE": return 135;
+                case "SE":  return 135.0;
                 case "SSE": return 157.5;
-                case "S": return 180;
+                case "S":   return 180.0;
                 case "SSW": return 202.5;
-                case "SW": return 225;
+                case "SW":  return 225.0;
                 case "WSW": return 247.5;
-                case "W": return 270;
+                case "W":   return 270.0;
                 case "WNW": return 292.5;
-                case "NW": return 315;
+                case "NW":  return 315.0;
                 case "NNW": return 337.5;
-                default: return Double.NaN;
+                default:    return Double.NaN;
             }
         }
     }
