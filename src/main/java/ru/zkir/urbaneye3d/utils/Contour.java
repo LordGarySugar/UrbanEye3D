@@ -116,7 +116,7 @@ public class Contour {
 
                 // 2. All points of the part must be outside all of the building's inner rings (holes).
                 for (ArrayList<Point2D> buildingInnerRing : this.innerRings) {
-                    if (isPointInside(buildingInnerRing, point)) {
+                    if (isPointStrictlyInside(buildingInnerRing, point)) {
                         return false; // Part is inside a hole of the building.
                     }
                 }
@@ -127,8 +127,20 @@ public class Contour {
         return true;
     }
 
-    private boolean isPointInside(List<Point2D> polygon, Point2D point) {
+    private boolean isPointStrictlyInside(List<Point2D> polygon, Point2D point) {
         if (isPointOnBorder(polygon, point)) {
+            return false;
+        }
+        return isPointInside(polygon, point, false);
+    }
+
+    private boolean isPointInside(List<Point2D> polygon, Point2D point) {
+        return isPointInside(polygon, point, true);
+    }
+
+
+    private boolean isPointInside(List<Point2D> polygon, Point2D point, boolean includeBorder) {
+        if (includeBorder && isPointOnBorder(polygon, point)) {
             return true; // for our purposes we consider borders as part of a polygon
         }
 
