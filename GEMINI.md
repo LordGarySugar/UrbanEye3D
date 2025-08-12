@@ -52,6 +52,9 @@ MoSCoW:
 
 ## Recent Accomplishments 
 
+### August 12, 2025
+* More proper algorithm for building outline simplification (related to [github issue #12](https://github.com/Zkir/UrbanEye3D/issues/12))
+
 ### August 9, 2025
 * primitiveId  added to RenderableBuildingElement
 
